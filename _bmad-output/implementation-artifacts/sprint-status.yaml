@@ -1,0 +1,85 @@
+# generated: 2026-01-09
+# project: Camera
+# project_key: camera
+# tracking_system: file-system
+# story_location: /Users/sixblack/code/Camera/_bmad-output/implementation-artifacts
+
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+#
+# Epic Status Transitions:
+#   - backlog → in-progress: Automatically when first story is created (via create-story)
+#   - in-progress → done: Manually when all stories reach 'done' status
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created in stories folder
+#   - in-progress: Developer actively working on implementation
+#   - review: Ready for code review (via Dev's code-review workflow)
+#   - done: Story completed
+#
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+#
+# WORKFLOW NOTES:
+# ===============
+# - Epic transitions to 'in-progress' automatically when first story is created
+# - Stories can be worked in parallel if team capacity allows
+# - SM typically creates next story after previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
+
+generated: 2026-01-09
+project: Camera
+project_key: camera
+tracking_system: file-system
+story_location: "/Users/sixblack/code/Camera/_bmad-output/implementation-artifacts"
+
+development_status:
+  # Epic 1: Core Camera Foundation & Basic Capture
+  epic-1: in-progress
+  1-1-camera-permission-request-flow: done
+  1-2-photo-library-permission-request-flow: done
+  1-3-viewfinder-initialization-live-preview: done
+  1-4-tap-to-focus-interaction: ready-for-dev
+  1-5-basic-photo-capture-heic-jpg: ready-for-dev
+  1-6-auto-mode-toggle: ready-for-dev
+  1-7-mode-persistence-between-sessions: ready-for-dev
+  epic-1-retrospective: optional
+
+  # Epic 2: Manual Controls & Pro Mode
+  epic-2: backlog
+  2-1-pro-mode-activation-ui-transition: backlog
+  2-2-iso-dial-control-with-real-time-preview: backlog
+  2-3-shutter-speed-dial-control-with-real-time-preview: backlog
+  2-4-manual-focus-dial-control-with-visual-confirmation: backlog
+  2-5-white-balance-control-with-presets-and-kelvin: backlog
+  2-6-hardware-lens-switching-virtual-device: backlog
+  2-7-exposure-values-display-hud: backlog
+  epic-2-retrospective: optional
+
+  # Epic 3: Visual Aids & Capture Confidence
+  epic-3: backlog
+  3-1-real-time-rgb-histogram-overlay: backlog
+  3-2-focus-peaking-overlay: backlog
+  3-3-independent-ae-lock: backlog
+  3-4-independent-af-lock: backlog
+  3-5-combined-ae-af-lock-gesture: backlog
+  3-6-visual-aid-toggle-controls: backlog
+  epic-3-retrospective: optional
+
+  # Epic 4: Advanced Capture & Asset Management
+  epic-4: backlog
+  4-1-raw-dng-capture-format: backlog
+  4-2-apple-proraw-capture: backlog
+  4-3-format-selection-toggle: backlog
+  4-4-location-permission-request-for-geotagging: backlog
+  4-5-geotagging-toggle-and-gps-metadata-injection: backlog
+  4-6-background-save-with-progress-indication: backlog
+  4-7-memory-management-for-raw-buffers: backlog
+  4-8-storage-space-awareness: backlog
+  epic-4-retrospective: optional

@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir:*)",
+      "Bash(cat:*)",
+      "Skill(bmad:core:tasks:index-docs)",
+      "Skill(bmad:bmm:workflows:sprint-planning)",
+      "Skill(bmad:bmm:workflows:create-story)",
+      "WebSearch",
+      "Bash(xcodebuild:*)",
+      "Skill(bmad:bmm:workflows:code-review)",
+      "Bash(git rev-parse:*)"
+    ]
+  }
+}
