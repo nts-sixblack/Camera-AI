@@ -30,7 +30,9 @@ final class ViewfinderViewTests: XCTestCase {
   func testViewfinderCoordinator_CreatesPreviewLayer() {
     // Given
     let session = AVCaptureSession()
-    let coordinator = ViewfinderCoordinator()
+    let engine = CameraEngine(captureSession: MockCaptureSession())
+    let view = ViewfinderView(cameraEngine: engine)
+    let coordinator = ViewfinderCoordinator(parent: view)
 
     // When - simulate what the view does
     let previewLayer = AVCaptureVideoPreviewLayer(session: session)
@@ -44,7 +46,10 @@ final class ViewfinderViewTests: XCTestCase {
   func testViewfinderCoordinator_PreviewLayerUsesAspectFill() {
     // Given
     let session = AVCaptureSession()
-    let coordinator = ViewfinderCoordinator()
+    let engine = CameraEngine(captureSession: MockCaptureSession())
+    let view = ViewfinderView(cameraEngine: engine)
+    let coordinator = ViewfinderCoordinator(parent: view)
+
     let previewLayer = AVCaptureVideoPreviewLayer(session: session)
     previewLayer.videoGravity = .resizeAspectFill
     coordinator.previewLayer = previewLayer
@@ -58,7 +63,10 @@ final class ViewfinderViewTests: XCTestCase {
   func testViewfinderCoordinator_SetsPortraitOrientation() {
     // Given
     let session = AVCaptureSession()
-    let coordinator = ViewfinderCoordinator()
+    let engine = CameraEngine(captureSession: MockCaptureSession())
+    let view = ViewfinderView(cameraEngine: engine)
+    let coordinator = ViewfinderCoordinator(parent: view)
+
     let previewLayer = AVCaptureVideoPreviewLayer(session: session)
     coordinator.previewLayer = previewLayer
 

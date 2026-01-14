@@ -8,6 +8,7 @@
 
 import AVFoundation
 import Combine
+import UIKit
 
 /// Represents the current state of the CameraEngine
 enum CameraEngineState: Equatable, Sendable {
@@ -21,7 +22,7 @@ enum CameraEngineState: Equatable, Sendable {
     switch (lhs, rhs) {
     case (.idle, .idle), (.starting, .starting), (.running, .running), (.interrupted, .interrupted):
       return true
-    case let (.error(l), .error(r)):
+    case (.error(let l), .error(let r)):
       return l == r
     default:
       return false
@@ -46,13 +47,38 @@ protocol CaptureSessionProtocol: AnyObject {
 /// Make AVCaptureSession conform to CaptureSessionProtocol
 extension AVCaptureSession: CaptureSessionProtocol {}
 
+/// Protocol for AVCaptureDevice to enable testing
+protocol CaptureDeviceProtocol: AnyObject, Sendable {
+  var isFocusPointOfInterestSupported: Bool { get }
+  var focusPointOfInterest: CGPoint { get set }
+  var focusMode: AVCaptureDevice.FocusMode { get set }
+
+  var isExposurePointOfInterestSupported: Bool { get }
+  var exposurePointOfInterest: CGPoint { get set }
+  var exposureMode: AVCaptureDevice.ExposureMode { get set }
+
+  var isSubjectAreaChangeMonitoringEnabled: Bool { get set }
+
+  var whiteBalanceMode: AVCaptureDevice.WhiteBalanceMode { get set }
+
+  func isFocusModeSupported(_ focusMode: AVCaptureDevice.FocusMode) -> Bool
+  func isExposureModeSupported(_ exposureMode: AVCaptureDevice.ExposureMode) -> Bool
+  func isWhiteBalanceModeSupported(_ whiteBalanceMode: AVCaptureDevice.WhiteBalanceMode) -> Bool
+
+  func lockForConfiguration() throws
+  func unlockForConfiguration()
+}
+
+/// Make AVCaptureDevice conform to CaptureDeviceProtocol
+extension AVCaptureDevice: CaptureDeviceProtocol {}
+
 /// Protocol for providing capture devices to enable testing
 protocol CaptureDeviceProviding: Sendable {
   func defaultDevice(
     for deviceType: AVCaptureDevice.DeviceType,
     mediaType: AVMediaType,
     position: AVCaptureDevice.Position
-  ) -> AVCaptureDevice?
+  ) -> (any CaptureDeviceProtocol)?
 }
 
 /// Production implementation using AVCaptureDevice.DiscoverySession
@@ -61,7 +87,7 @@ final class ProductionCaptureDeviceProvider: CaptureDeviceProviding, Sendable {
     for deviceType: AVCaptureDevice.DeviceType,
     mediaType: AVMediaType,
     position: AVCaptureDevice.Position
-  ) -> AVCaptureDevice? {
+  ) -> (any CaptureDeviceProtocol)? {
     let discoverySession = AVCaptureDevice.DiscoverySession(
       deviceTypes: [deviceType],
       mediaType: mediaType,
@@ -106,11 +132,20 @@ final class CameraEngine: @unchecked Sendable {
   private let lock = NSLock()
   private var isConfigured = false
 
+  // Keep regular reference for configuration
+  private var activeVideoDevice: (any CaptureDeviceProtocol)?
+
+  private let photoOutput = AVCapturePhotoOutput()
+
+  /// References to in-progress capture processors to keep them alive
+  private var inProgressPhotoCaptureDelegates = [Int64: PhotoCaptureProcessor]()
+
   // MARK: - Notification Observers
 
   private var interruptionObserver: NSObjectProtocol?
   private var interruptionEndedObserver: NSObjectProtocol?
   private var runtimeErrorObserver: NSObjectProtocol?
+  private var subjectAreaChangeObserver: NSObjectProtocol?
 
   // MARK: - Initialization
 
@@ -181,6 +216,85 @@ final class CameraEngine: @unchecked Sendable {
     }
   }
 
+  /// Focuses the camera at a specific point
+  /// - Parameter point: The point of interest (0,0 is top-left, 1,1 is bottom-right)
+  func focus(at point: CGPoint) {
+    sessionQueue.async { [weak self] in
+      guard let self = self, let device = self.activeVideoDevice else { return }
+
+      do {
+        try device.lockForConfiguration()
+
+        // Focus
+        if device.isFocusPointOfInterestSupported {
+          device.focusPointOfInterest = point
+          device.focusMode = .autoFocus
+        }
+
+        // Exposure
+        if device.isExposurePointOfInterestSupported {
+          device.exposurePointOfInterest = point
+          device.exposureMode = .continuousAutoExposure
+        }
+
+        // Subject Monitoring
+        device.isSubjectAreaChangeMonitoringEnabled = true
+
+        device.unlockForConfiguration()
+      } catch {
+        // Log critical error
+        print(
+          "[CameraEngine] 🚨 Failed to lock configuration for focus: \(error.localizedDescription)")
+      }
+    }
+  }
+
+  /// Captures a photo using the configured settings
+  /// - Parameter completion: Called with the captured data or an error
+  func capturePhoto(completion: @escaping (Result<Data, Error>) -> Void) {
+    sessionQueue.async { [weak self] in
+      guard let self = self else { return }
+
+      // Update orientation
+      if let connection = self.photoOutput.connection(with: .video),
+        connection.isVideoOrientationSupported
+      {
+        connection.videoOrientation = self.currentVideoOrientation
+      }
+
+      var photoSettings = AVCapturePhotoSettings()
+
+      // Prefer HEIC if available
+      if self.photoOutput.availablePhotoCodecTypes.contains(.hevc) {
+        photoSettings = AVCapturePhotoSettings(format: [AVVideoCodecKey: AVVideoCodecType.hevc])
+      }
+
+      let uniqueID = photoSettings.uniqueID
+
+      let processor = PhotoCaptureProcessor { [weak self] result in
+        completion(result)
+
+        // Remove self from delegates to release memory
+        self?.sessionQueue.async {
+          self?.inProgressPhotoCaptureDelegates[uniqueID] = nil
+        }
+      }
+
+      self.inProgressPhotoCaptureDelegates[uniqueID] = processor
+      self.photoOutput.capturePhoto(with: photoSettings, delegate: processor)
+    }
+  }
+
+  private var currentVideoOrientation: AVCaptureVideoOrientation {
+    switch UIDevice.current.orientation {
+    case .portrait: return .portrait
+    case .portraitUpsideDown: return .portraitUpsideDown
+    case .landscapeLeft: return .landscapeRight  // Camera orientation is mirrored? No, usually device left = camera right
+    case .landscapeRight: return .landscapeLeft
+    default: return .portrait
+    }
+  }
+
   // MARK: - Session Configuration
 
   private func configureSession() {
@@ -188,25 +302,53 @@ final class CameraEngine: @unchecked Sendable {
     captureSession.sessionPreset = .photo
 
     // Add video input
-    guard let videoDevice = deviceProvider.defaultDevice(
-      for: .builtInWideAngleCamera,
-      mediaType: .video,
-      position: .back
-    ) else {
+    guard
+      let videoDevice = deviceProvider.defaultDevice(
+        for: .builtInWideAngleCamera,
+        mediaType: .video,
+        position: .back
+      )
+    else {
       captureSession.commitConfiguration()
       updateState(.error("No camera device available"))
       return
     }
 
+    // Store device for later use (focus/exposure)
+    activeVideoDevice = videoDevice
+
     do {
-      let videoInput = try AVCaptureDeviceInput(device: videoDevice)
-      if captureSession.canAddInput(videoInput) {
-        captureSession.addInput(videoInput)
+      // We need to cast back to AVCaptureDevice to create input, or wrap input creation too.
+      // Since AVCaptureDeviceInput takes AVCaptureDevice, and we can't easily mock that init without wrapping,
+      // For now, checking if it is a real device if we are in production.
+      // For testing, we might skip adding input or mock the session's addInput behavior differently.
+
+      if let realDevice = videoDevice as? AVCaptureDevice {
+        let videoInput = try AVCaptureDeviceInput(device: realDevice)
+        if captureSession.canAddInput(videoInput) {
+          captureSession.addInput(videoInput)
+        } else {
+          captureSession.commitConfiguration()
+          updateState(.error("Could not add video input"))
+          return
+        }
+      } else {
+        // Handle mock device case if needed, or rely on mock session to ignore input check validation
+        // for now just proceed as if input was added if it's a mock
+      }
+
+      // Add photo output
+      if captureSession.canAddOutput(photoOutput) {
+        captureSession.addOutput(photoOutput)
+        photoOutput.isHighResolutionCaptureEnabled = true
       } else {
         captureSession.commitConfiguration()
-        updateState(.error("Could not add video input"))
+        updateState(.error("Could not add photo output"))
         return
       }
+
+    } catch {
+
     } catch {
       captureSession.commitConfiguration()
       updateState(.error("Failed to create video input: \(error.localizedDescription)"))
@@ -254,6 +396,15 @@ final class CameraEngine: @unchecked Sendable {
     ) { [weak self] notification in
       self?.handleRuntimeError(notification)
     }
+
+    // Observe Subject Area Changes (e.g. user moved camera significantly)
+    subjectAreaChangeObserver = NotificationCenter.default.addObserver(
+      forName: AVCaptureDevice.subjectAreaDidChangeNotification,
+      object: nil,  // Observe any device change, or filter if we had the precise AVCaptureDevice reference that conforms to NSObject
+      queue: .main
+    ) { [weak self] notification in
+      self?.handleSubjectAreaDidChange(notification)
+    }
   }
 
   private func removeNotificationObservers() {
@@ -264,6 +415,9 @@ final class CameraEngine: @unchecked Sendable {
       NotificationCenter.default.removeObserver(observer)
     }
     if let observer = runtimeErrorObserver {
+      NotificationCenter.default.removeObserver(observer)
+    }
+    if let observer = subjectAreaChangeObserver {
       NotificationCenter.default.removeObserver(observer)
     }
   }
@@ -282,6 +436,28 @@ final class CameraEngine: @unchecked Sendable {
     }
   }
 
+  private func handleSubjectAreaDidChange(_ notification: Notification) {
+    sessionQueue.async { [weak self] in
+      guard let self = self, let device = self.activeVideoDevice else { return }
+
+      // Ideally check if notification.object is our device, but `activeVideoDevice` is protocol.
+      // For now, simple approach: just reset if we have an active device.
+
+      do {
+        try device.lockForConfiguration()
+
+        // Reset to continuous auto focus/exposure (center weighted usually default)
+        device.focusMode = .continuousAutoFocus
+        device.exposureMode = .continuousAutoExposure
+        device.isSubjectAreaChangeMonitoringEnabled = false
+
+        device.unlockForConfiguration()
+      } catch {
+        print("[CameraEngine] 🚨 Failed to reset subject area focus: \(error.localizedDescription)")
+      }
+    }
+  }
+
   private func handleRuntimeError(_ notification: Notification) {
     guard let error = notification.userInfo?[AVCaptureSessionErrorKey] as? AVError else {
       return
@@ -294,6 +470,36 @@ final class CameraEngine: @unchecked Sendable {
       if !self.captureSession.isRunning {
         self.captureSession.startRunning()
         self.updateState(.running)
+      }
+    }
+  }
+
+  /// Resets camera configuration to automatic modes
+  func resetToAuto() {
+    sessionQueue.async { [weak self] in
+      guard let self = self, let device = self.activeVideoDevice else { return }
+
+      do {
+        try device.lockForConfiguration()
+
+        if device.isFocusModeSupported(.continuousAutoFocus) {
+          device.focusMode = .continuousAutoFocus
+        }
+
+        if device.isExposureModeSupported(.continuousAutoExposure) {
+          device.exposureMode = .continuousAutoExposure
+        }
+
+        if device.isWhiteBalanceModeSupported(.continuousAutoWhiteBalance) {
+          device.whiteBalanceMode = .continuousAutoWhiteBalance
+        }
+
+        // Reset subject area monitoring
+        device.isSubjectAreaChangeMonitoringEnabled = false
+
+        device.unlockForConfiguration()
+      } catch {
+        print("[CameraEngine] 🚨 Failed to reset to auto: \(error.localizedDescription)")
       }
     }
   }

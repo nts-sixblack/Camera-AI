@@ -1,6 +1,6 @@
 # Story 1.6: Auto Mode Toggle
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -38,23 +38,23 @@ so that **I can quickly return to point-and-shoot simplicity or hand my phone to
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Implement Mode State Management (AC: #1, #3)
-  - [ ] Create a `CameraMode` enum (`.auto`, `.pro`)
-  - [ ] Implement a centralized `AppStateMachine` or observable view model to track the current mode
-- [ ] Task 2: Create Mode Toggle View (AC: #2, #4)
-  - [ ] Design a SwiftUI `ModeToggleView` matching the dark theme
-  - [ ] Implement the "Auto" and "Pro" labels with Signal Orange (#FF9500) accent for active state
-  - [ ] Add `UIImpactFeedbackGenerator(style: .light)` to the toggle action
-- [ ] Task 3: Implement Reset Logic in Camera Engine (AC: #1, #3)
-  - [ ] Create `resetToAuto()` method in `CameraEngine`
-  - [ ] Set `focusMode` to `.continuousAutoFocus`
-  - [ ] Set `exposureMode` to `.continuousAutoExposure`
-  - [ ] Set `whiteBalanceMode` to `.continuousAutoWhiteBalance`
-- [ ] Task 4: Integrate Toggle into Main View (AC: #2)
-  - [ ] Place the toggle in the lower section of the `ViewfinderView` (thumb zone)
-  - [ ] Ensure the UI layout adapts to the mode change (hiding/showing controls)
-- [ ] Task 5: Write State Transition Tests (NFR6)
-  - [ ] Verify that `resetToAuto()` correctly updates the `AVCaptureDevice` properties
+- [x] Task 1: Implement Mode State Management (AC: #1, #3)
+  - [x] Create a `CameraMode` enum (`.auto`, `.pro`)
+  - [x] Implement a centralized `AppStateMachine` or observable view model to track the current mode
+- [x] Task 2: Create Mode Toggle View (AC: #2, #4)
+  - [x] Design a SwiftUI `ModeToggleView` matching the dark theme
+  - [x] Implement the "Auto" and "Pro" labels with Signal Orange (#FF9500) accent for active state
+  - [x] Add `UIImpactFeedbackGenerator(style: .light)` to the toggle action
+- [x] Task 3: Implement Reset Logic in Camera Engine (AC: #1, #3)
+  - [x] Create `resetToAuto()` method in `CameraEngine`
+  - [x] Set `focusMode` to `.continuousAutoFocus`
+  - [x] Set `exposureMode` to `.continuousAutoExposure`
+  - [x] Set `whiteBalanceMode` to `.continuousAutoWhiteBalance`
+- [x] Task 4: Integrate Toggle into Main View (AC: #2)
+  - [x] Place the toggle in the lower section of the `ViewfinderView` (thumb zone)
+  - [x] Ensure the UI layout adapts to the mode change (hiding/showing controls)
+- [x] Task 5: Write State Transition Tests (NFR6)
+  - [x] Verify that `resetToAuto()` correctly updates the `AVCaptureDevice` properties
 
 ## Dev Notes
 
@@ -139,5 +139,15 @@ Camera/
 ### Debug Log References
 
 ### Completion Notes List
+- [Code Review] Fixed AC3 violation (Focus indicator persistence) by adding `.onChange` reset logic.
+- [Code Review] Improved accessibility for `ModeToggleView` (44pt touch target).
+- [Code Review] Adopted `AppColors.signalOrange` for consistent theming.
+
 
 ### File List
+- `Camera/Features/Viewfinder/CameraEngine.swift` (Modified)
+- `Camera/Features/Viewfinder/Views/ViewfinderContainerView.swift` (Modified)
+- `Camera/Features/Viewfinder/Views/ModeToggleView.swift` (New)
+- `CameraTests/CameraModeTests.swift` (New)
+- `CameraTests/CameraEngineTests.swift` (Modified)
+

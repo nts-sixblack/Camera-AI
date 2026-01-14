@@ -1,6 +1,6 @@
 # Story 1.7: Mode Persistence Between Sessions
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -34,17 +34,21 @@ so that **I don't have to reconfigure my preferred mode every time I launch the 
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Implement Persistence Service (AC: #1, #2, #4)
-  - [ ] Use `@AppStorage` in the `CameraViewModel` (or equivalent) to track the `lastShootingMode`
-  - [ ] Define a clear key (e.g., `"com.camera.lastShootingMode"`)
-- [ ] Task 2: Integration with App Launch (AC: #1, #2, #3)
-  - [ ] Ensure the stored mode is read and applied during the initial setup of the `CameraEngine`
-  - [ ] If Pro mode is restored, ensure the `CameraEngine` does NOT reset to auto immediately
-- [ ] Task 3: Handle App Lifecycle Events (AC: #1, #2)
-  - [ ] Verify persistence works across force quits and system-initiated background terminations
-- [ ] Task 4: Write Persistence Tests (NFR6)
-  - [ ] Test the saving and loading of the mode state using `UserDefaults` (with a test suite domain)
-  - [ ] Verify the default value logic for first-time launch
+- [x] Task 1: Implement Persistence Service (AC: #1, #2, #4)
+  - [x] Use `UserDefaults` injection (via `@AppStorage` or direct) in the `CameraViewModel` (or equivalent) to track the `lastShootingMode` for testability
+  - [x] Define a clear key (e.g., `"com.camera.lastShootingMode"`)
+- [x] Task 2: Integration with App Launch (AC: #1, #2, #3)
+  - [x] Ensure the stored mode is read and applied during the initial setup of the `CameraEngine`
+  - [x] If Pro mode is restored, ensure the `CameraEngine` does NOT reset to auto immediately
+- [x] Task 3: Handle App Lifecycle Events (AC: #1, #2)
+  - [x] Verify persistence works across force quits and system-initiated background terminations
+- [x] Task 4: Write Persistence Tests (NFR6)
+  - [x] Test the saving and loading of the mode state using `UserDefaults` (with a test suite domain)
+  - [x] Verify the default value logic for first-time launch
+
+- [ ] Review Follow-ups (AI)
+  - [ ] [AI-Review][Medium] Verify Engine State: Confirm `CameraEngine` defaults align with Pro mode restoration expectation. [ViewfinderContainerView.swift]
+  - [ ] [AI-Review][Medium] UI Verification: Add manual verification for Pro controls validity. [ViewfinderContainerView.swift]
 
 ## Dev Notes
 
@@ -113,3 +117,6 @@ Camera/
 ### Completion Notes List
 
 ### File List
+
+- Camera/Features/Viewfinder/Views/ViewfinderContainerView.swift
+- CameraTests/CameraModeTests.swift

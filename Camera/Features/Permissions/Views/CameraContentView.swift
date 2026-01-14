@@ -26,7 +26,8 @@ struct CameraContentView: View {
 
   init(
     cameraPermissionManager: any CameraPermissionManaging = CameraPermissionManager(),
-    photoLibraryPermissionManager: any PhotoLibraryPermissionManaging = PhotoLibraryPermissionManager()
+    photoLibraryPermissionManager: any PhotoLibraryPermissionManaging =
+      PhotoLibraryPermissionManager()
   ) {
     self.cameraPermissionManager = cameraPermissionManager
     self.photoLibraryPermissionManager = photoLibraryPermissionManager
@@ -72,21 +73,19 @@ struct CameraContentView: View {
       break
     }
 
-    // Photo library permission - denied/restricted blocks saving but capture still possible
-    switch photoLibraryPermissionState {
-    case .denied, .restricted:
-      return .photoLibrary(photoLibraryPermissionState)
-    case .notDetermined, .authorized, .limited:
-      // Limited access still allows saving new photos
-      return .none
-    }
+    // Photo Library permission should NOT block the camera viewfinder
+    // (We allow capture even if saving is disabled/denied)
+    return .none
   }
 
   @ViewBuilder
   private var contentForPermissionState: some View {
     switch currentBlocker {
     case .none:
-      ViewfinderContainerView(photoLibraryState: photoLibraryPermissionState)
+      ViewfinderContainerView(
+        photoLibraryState: photoLibraryPermissionState,
+        photoLibraryPermissionManager: photoLibraryPermissionManager
+      )
     case .camera(let state):
       switch state {
       case .denied:
@@ -97,21 +96,16 @@ struct CameraContentView: View {
         ProgressView()
           .tint(.white)
       }
-    case .photoLibrary(let state):
-      switch state {
-      case .denied:
-        PhotoLibraryPermissionDeniedView(isRestricted: false, onOpenSettings: openSettings)
-      case .restricted:
-        PhotoLibraryPermissionDeniedView(isRestricted: true, onOpenSettings: {})
-      case .notDetermined, .authorized, .limited:
-        ProgressView()
-          .tint(.white)
-      }
+    case .photoLibrary:
+      // Should not overlap with camera blocker in this updated logic
+      EmptyView()
     }
   }
 
   /// Announces camera permission state changes for VoiceOver users
-  private func announceCameraPermissionStateChange(from oldState: CameraAuthorizationState, to newState: CameraAuthorizationState) {
+  private func announceCameraPermissionStateChange(
+    from oldState: CameraAuthorizationState, to newState: CameraAuthorizationState
+  ) {
     guard oldState != newState else { return }
 
     let announcement: String
@@ -130,7 +124,9 @@ struct CameraContentView: View {
   }
 
   /// Announces photo library permission state changes for VoiceOver users
-  private func announcePhotoLibraryPermissionStateChange(from oldState: PhotoLibraryAuthorizationState, to newState: PhotoLibraryAuthorizationState) {
+  private func announcePhotoLibraryPermissionStateChange(
+    from oldState: PhotoLibraryAuthorizationState, to newState: PhotoLibraryAuthorizationState
+  ) {
     guard oldState != newState else { return }
 
     let announcement: String
@@ -163,28 +159,12 @@ struct CameraContentView: View {
       }
     }
 
-    // Only proceed to photo library permission if camera is authorized
-    guard cameraPermissionState == .authorized else {
-      await MainActor.run {
-        isCheckingPermissions = false
-      }
-      return
-    }
-
-    // Check photo library permission
+    // Check Photo Library permission status but DO NOT request it yet
+    // (Request should happen on first save attempt per strict privacy/UX)
     let photoStatus = photoLibraryPermissionManager.checkAuthorizationStatus()
-
-    if photoStatus == .notDetermined {
-      let resultState = await photoLibraryPermissionManager.requestAccess()
-      await MainActor.run {
-        photoLibraryPermissionState = resultState
-        isCheckingPermissions = false
-      }
-    } else {
-      await MainActor.run {
-        photoLibraryPermissionState = photoStatus
-        isCheckingPermissions = false
-      }
+    await MainActor.run {
+      photoLibraryPermissionState = photoStatus
+      isCheckingPermissions = false
     }
   }
 
@@ -198,6 +178,7 @@ struct CameraContentView: View {
     }
   }
 
+  @MainActor
   private func openSettings() {
     guard let settingsURL = URL(string: UIApplication.openSettingsURLString) else { return }
     UIApplication.shared.open(settingsURL)
@@ -261,7 +242,9 @@ private final class PreviewCameraPermissionManager: CameraPermissionManaging, @u
 }
 
 /// Mock photo library permission manager for SwiftUI previews
-private final class PreviewPhotoLibraryPermissionManager: PhotoLibraryPermissionManaging, @unchecked Sendable {
+private final class PreviewPhotoLibraryPermissionManager: PhotoLibraryPermissionManaging,
+  @unchecked Sendable
+{
   private let state: PhotoLibraryAuthorizationState
 
   init(state: PhotoLibraryAuthorizationState) {

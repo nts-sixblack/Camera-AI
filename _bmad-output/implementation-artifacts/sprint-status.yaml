@@ -45,10 +45,10 @@ development_status:
   1-1-camera-permission-request-flow: done
   1-2-photo-library-permission-request-flow: done
   1-3-viewfinder-initialization-live-preview: done
-  1-4-tap-to-focus-interaction: ready-for-dev
-  1-5-basic-photo-capture-heic-jpg: ready-for-dev
-  1-6-auto-mode-toggle: ready-for-dev
-  1-7-mode-persistence-between-sessions: ready-for-dev
+  1-4-tap-to-focus-interaction: done
+  1-5-basic-photo-capture-heic-jpg: done
+  1-6-auto-mode-toggle: done
+  1-7-mode-persistence-between-sessions: done
   epic-1-retrospective: optional
 
   # Epic 2: Manual Controls & Pro Mode

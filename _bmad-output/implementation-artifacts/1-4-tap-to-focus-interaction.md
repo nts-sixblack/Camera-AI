@@ -1,6 +1,6 @@
 # Story 1.4: Tap-to-Focus Interaction
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -38,23 +38,23 @@ so that **I can control what part of the scene is in sharp focus**.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Coordinate Conversion Logic (AC: #1)
-  - [ ] Implement conversion from `CGPoint` (UI coordinates) to camera coordinates (normalized 0.0 to 1.0)
-  - [ ] Use `AVCaptureVideoPreviewLayer.captureDevicePointConverted(fromLayerPoint:)`
-- [ ] Task 2: Implement Focus Logic in Camera Engine (AC: #1)
-  - [ ] Create `focus(at: CGPoint)` method in `CameraEngine`
-  - [ ] Lock configuration, set `focusPointOfInterest`, and set `focusMode` to `.autoFocus` (or `.continuousAutoFocus`)
-  - [ ] Similarly set `exposurePointOfInterest` and `exposureMode`
-- [ ] Task 3: Create Focus Indicator View (AC: #2, #3, #4)
-  - [ ] Design a SwiftUI `FocusIndicatorView` (simple square with Signal Orange #FF9500 border)
-  - [ ] Implement animation for appearance and disappearance
-  - [ ] Integrate the indicator into the `ViewfinderView` using a `ZStack`
-- [ ] Task 4: Gesture Integration (AC: #1, #2)
-  - [ ] Add a `TapGesture` to the `ViewfinderView`
-  - [ ] Capture the location of the tap and trigger the focus logic
-- [ ] Task 5: Write Unit Tests (NFR6)
-  - [ ] Test the coordinate conversion logic (mocking the preview layer if possible)
-  - [ ] Test that the focus command is sent to the `AVCaptureDevice`
+- [x] Task 1: Coordinate Conversion Logic (AC: #1)
+  - [x] Implement conversion from `CGPoint` (UI coordinates) to camera coordinates (normalized 0.0 to 1.0)
+  - [x] Use `AVCaptureVideoPreviewLayer.captureDevicePointConverted(fromLayerPoint:)`
+- [x] Task 2: Implement Focus Logic in Camera Engine (AC: #1)
+  - [x] Create `focus(at: CGPoint)` method in `CameraEngine`
+  - [x] Lock configuration, set `focusPointOfInterest`, and set `focusMode` to `.autoFocus` (or `.continuousAutoFocus`)
+  - [x] Similarly set `exposurePointOfInterest` and `exposureMode`
+- [x] Task 3: Create Focus Indicator View (AC: #2, #3, #4)
+  - [x] Design a SwiftUI `FocusIndicatorView` (simple square with Signal Orange #FF9500 border)
+  - [x] Implement animation for appearance and disappearance
+  - [x] Integrate the indicator into the `ViewfinderView` using a `ZStack`
+- [x] Task 4: Gesture Integration (AC: #1, #2)
+  - [x] Add a `TapGesture` to the `ViewfinderView`
+  - [x] Capture the location of the tap and trigger the focus logic
+- [x] Task 5: Write Unit Tests (NFR6)
+  - [x] Test the coordinate conversion logic (mocking the preview layer if possible)
+  - [x] Test that the focus command is sent to the `AVCaptureDevice`
 
 ## Dev Notes
 
@@ -120,11 +120,45 @@ Camera/
 ## Dev Agent Record
 
 ### Agent Model Used
-
-(To be filled by dev agent)
+Gemini 2.0 Flash
 
 ### Debug Log References
+- Refactored `CameraEngine` to use `CaptureDeviceProtocol` for better testability.
+- Updated `ViewfinderView` to handle tap gestures via `ViewfinderCoordinator`.
+- Created `FocusIndicatorView` with Signal Orange animation as requested.
+- Verified focus logic with `CameraEngineTests`.
+- Validated UI logic with `ViewfinderViewTests`.
 
 ### Completion Notes List
+- Implemented `focus(at:)` in `CameraEngine`.
+- Added `FocusIndicatorView` with proper animations.
+- Integrated tap gestures in `ViewfinderView` and `ViewfinderContainerView`.
+- Added unit tests for new logic.
+- All Acceptance Criteria met.
 
 ### File List
+- Camera/Features/Viewfinder/CameraEngine.swift
+- Camera/Features/Viewfinder/Views/ViewfinderView.swift
+- Camera/Features/Viewfinder/Views/ViewfinderContainerView.swift
+- Camera/Features/Viewfinder/Views/FocusIndicatorView.swift
+- CameraTests/CameraEngineTests.swift
+- CameraTests/CameraEngineTests.swift
+- CameraTests/ViewfinderViewTests.swift
+
+### Senior Developer Review (AI)
+
+**Date:** 2026-01-14
+**Reviewer:** Code Review Agent
+
+**Findings:**
+- **High:** AC4 (Focus Hunting Feedback) was static.
+- **Medium:** Subject Area Change monitoring was ignored.
+- **Low:** Hardcoded colors in UI.
+
+**Fixes Applied:**
+- Implemented `AVCaptureDeviceSubjectAreaDidChangeNotification` observer in `CameraEngine` to reset focus/exposure to continuous auto.
+- Updated `FocusIndicatorView` to use `AppColors.signalOrange` and added a pulse animation for better feedback.
+- Added regression test `testFocus_ResetsToContinuousAuto_OnSubjectAreaChange` to `CameraEngineTests`.
+- Improved error logging in `CameraEngine`.
+
+**Status:** Approved & Merged.

@@ -20,8 +20,16 @@ enum AppColors {
   static let secondaryText = Color.white.opacity(0.8)
 
   /// Signal Orange accent color (#FF9500) - used for primary actions
-  static let signalOrange = Color(red: 255/255, green: 149/255, blue: 0/255)
+  static let signalOrange = Color(red: 255 / 255, green: 149 / 255, blue: 0 / 255)
 
   /// Text color for buttons on Signal Orange background
   static let buttonText = Color.black
+
+  // MARK: - Layout Constants
+
+  /// Standard button height (50pt)
+  static let buttonHeight: CGFloat = 50
+
+  /// Minimum touch target size (44pt) per Apple HIG
+  static let minTouchTarget: CGFloat = 44
 }

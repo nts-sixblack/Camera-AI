@@ -15,55 +15,16 @@ struct PhotoLibraryPermissionDeniedView: View {
   let onOpenSettings: () -> Void
 
   var body: some View {
-    ZStack {
-      AppColors.background
-        .ignoresSafeArea()
-
-      VStack(spacing: 32) {
-        Spacer()
-
-        Image(systemName: isRestricted ? "lock.fill" : "photo.on.rectangle.angled")
-          .font(.system(size: 64))
-          .foregroundStyle(AppColors.primaryText)
-          .accessibilityHidden(true)
-
-        VStack(spacing: 16) {
-          Text(titleText)
-            .font(.title2)
-            .fontWeight(.semibold)
-            .foregroundStyle(AppColors.primaryText)
-            .multilineTextAlignment(.center)
-
-          Text(descriptionText)
-            .font(.body)
-            .foregroundStyle(AppColors.secondaryText)
-            .multilineTextAlignment(.center)
-            .padding(.horizontal, 32)
-        }
-
-        Spacer()
-
-        if !isRestricted {
-          Button(action: onOpenSettings) {
-            Text("Open Settings")
-              .font(.headline)
-              .foregroundStyle(AppColors.buttonText)
-              .frame(maxWidth: .infinity)
-              .frame(height: 50)
-              .background(AppColors.signalOrange)
-              .clipShape(RoundedRectangle(cornerRadius: 12))
-          }
-          .padding(.horizontal, 24)
-          .frame(minWidth: 44, minHeight: 44)
-          .accessibilityLabel("Open Settings to enable photo library access")
-        }
-
-        Spacer()
-          .frame(height: 48)
-      }
-    }
+    GenericPermissionDeniedView(
+      iconName: isRestricted ? "lock.fill" : "photo.on.rectangle.angled",
+      title: titleText,
+      description: descriptionText,
+      showSettingsButton: !isRestricted,
+      onOpenSettings: onOpenSettings
+    )
     .accessibilityElement(children: .contain)
-    .accessibilityLabel(isRestricted ? "Photo library access restricted" : "Photo library access denied")
+    .accessibilityLabel(
+      isRestricted ? "Photo library access restricted" : "Photo library access denied")
   }
 
   private var titleText: String {
@@ -72,7 +33,8 @@ struct PhotoLibraryPermissionDeniedView: View {
 
   private var descriptionText: String {
     if isRestricted {
-      return "Photo Library access is restricted by parental controls or device policy. Contact your administrator to enable access."
+      return
+        "Photo Library access is restricted by parental controls or device policy. Contact your administrator to enable access."
     } else {
       return "To save your captured photos, please enable Photo Library access in Settings."
     }

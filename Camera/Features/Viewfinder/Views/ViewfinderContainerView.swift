@@ -15,7 +15,27 @@ struct ViewfinderContainerView: View {
 
   let photoLibraryState: PhotoLibraryAuthorizationState
 
-  @StateObject private var viewModel = ViewfinderViewModel()
+  @StateObject private var viewModel: ViewfinderViewModel
+
+  // Focus Indicator State
+  @State private var focusPoint: CGPoint?
+  @State private var focusIndicatorID = UUID()
+
+  // Flash Animation State
+  @State private var showFlash = false
+
+  init(
+    photoLibraryState: PhotoLibraryAuthorizationState,
+    photoLibraryPermissionManager: any PhotoLibraryPermissionManaging =
+      PhotoLibraryPermissionManager()
+  ) {
+    self.photoLibraryState = photoLibraryState
+    self._viewModel = StateObject(
+      wrappedValue: ViewfinderViewModel(
+        photoLibraryPermissionManager: photoLibraryPermissionManager
+      )
+    )
+  }
 
   var body: some View {
     ZStack {
@@ -26,8 +46,24 @@ struct ViewfinderContainerView: View {
       case .idle, .loading:
         loadingView
       case .ready:
-        ViewfinderView(cameraEngine: viewModel.cameraEngine)
-          .ignoresSafeArea()
+        ViewfinderView(cameraEngine: viewModel.cameraEngine) { point in
+          // Handle tap for focus indicator
+          focusPoint = point
+          focusIndicatorID = UUID()  // Force view recreation to restart animation
+        }
+        .ignoresSafeArea()
+
+        // Focus Indicator Overlay
+        if let point = focusPoint {
+          FocusIndicatorView(position: point) {
+            // Animation complete
+            if focusPoint == point {
+              focusPoint = nil
+            }
+          }
+          .id(focusIndicatorID)
+        }
+
       case .error(let message):
         errorView(message: message)
       }
@@ -40,6 +76,55 @@ struct ViewfinderContainerView: View {
             .font(.caption)
             .foregroundStyle(.orange.opacity(0.8))
             .padding(.bottom, 100)
+        }
+      }
+
+      #if DEBUG
+        // Shutter Button & Mode Toggle
+        VStack {
+          Spacer()
+
+          ModeToggleView(mode: viewModel.mode) {
+            viewModel.toggleMode()
+          }
+          .padding(.bottom, 20)
+
+          ShutterButtonView {
+            // Trigger Flash
+            withAnimation(.linear(duration: 0.1)) {
+              showFlash = true
+            }
+            withAnimation(.linear(duration: 0.1).delay(0.1)) {
+              showFlash = false
+            }
+
+            // Capture Photo
+            Task {
+              await viewModel.capturePhoto()
+            }
+          }
+          .padding(.bottom, 50)
+        }
+      #endif
+
+      // Flash Overlay
+      if showFlash {
+        Color.black
+          .ignoresSafeArea()
+          .opacity(0.8)  // Or white for flash? Usually it's a "shutter" closing (black) or flash (white). AC says "brief flash animation". Usually implies white or black blink.
+        // Let's use black for "shutter" feel or white for "flash".
+        // "Flash animation" suggests light. But classic shutter is black.
+        // AC says "flash animation". Let's use white.
+      }
+
+      if showFlash {
+        Color.white.opacity(0.8).ignoresSafeArea()
+      }
+    }
+    .sheet(isPresented: $viewModel.isPhotoLibraryAccessDenied) {
+      PhotoLibraryPermissionDeniedView(isRestricted: false) {
+        if let url = URL(string: UIApplication.openSettingsURLString) {
+          UIApplication.shared.open(url)
         }
       }
     }
@@ -58,6 +143,11 @@ struct ViewfinderContainerView: View {
     ) { _ in
       Task {
         await viewModel.pauseForBackground()
+      }
+    }
+    .onChange(of: viewModel.mode) { newMode in
+      if newMode == .auto {
+        focusPoint = nil
       }
     }
   }
@@ -107,15 +197,48 @@ enum ViewfinderViewState: Equatable {
   case error(String)
 }
 
+/// Camera Operation Mode
+enum CameraMode: String, Equatable {
+  case auto
+  case pro
+}
+
 /// ViewModel for managing CameraEngine lifecycle
 @MainActor
 final class ViewfinderViewModel: ObservableObject {
 
   @Published private(set) var state: ViewfinderViewState = .idle
   @Published private(set) var showLoadingIndicator = false
+  @Published var isPhotoLibraryAccessDenied = false
+  @Published private(set) var mode: CameraMode = .auto
+
+  private let userDefaults: UserDefaults
+  private let lastShootingModeKey = "com.camera.lastShootingMode"
 
   /// Uses the shared CameraEngine instance for faster initialization
-  let cameraEngine = CameraEngine.shared
+  let cameraEngine: CameraEngine
+  private let photoLibraryPermissionManager: any PhotoLibraryPermissionManaging
+  private let persistenceService = PhotoPersistenceService()
+
+  init(
+    cameraEngine: CameraEngine = .shared,
+    photoLibraryPermissionManager: any PhotoLibraryPermissionManaging =
+      PhotoLibraryPermissionManager(),
+    userDefaults: UserDefaults = .standard
+  ) {
+    self.cameraEngine = cameraEngine
+    self.photoLibraryPermissionManager = photoLibraryPermissionManager
+    self.userDefaults = userDefaults
+
+    // Restore mode from persistence
+    if let savedRawValue = userDefaults.string(forKey: lastShootingModeKey),
+      let savedMode = CameraMode(rawValue: savedRawValue)
+    {
+      self.mode = savedMode
+    } else {
+      self.mode = .auto
+    }
+  }
 
   private var loadingTimerTask: Task<Void, Never>?
 
@@ -162,6 +285,48 @@ final class ViewfinderViewModel: ObservableObject {
   func resumeFromBackground() async {
     guard state == .ready else { return }
     await cameraEngine.startSession()
+  }
+
+  /// Handles the photo capture process
+  func capturePhoto() async {
+    let status = await photoLibraryPermissionManager.requestAccess()
+
+    await MainActor.run {
+      if status == .denied || status == .restricted {
+        isPhotoLibraryAccessDenied = true
+        return
+      }
+    }
+
+    // Proceed if authorized or limited
+    cameraEngine.capturePhoto { [weak self] result in
+      switch result {
+      case .success(let data):
+        Task {
+          do {
+            try await self?.persistenceService.save(data: data)
+            print("Photo saved successfully")
+          } catch {
+            print("Failed to save photo: \(error)")
+          }
+        }
+      case .failure(let error):
+        print("Failed to capture photo: \(error)")
+      }
+    }
+  }
+
+  func toggleMode() {
+    mode = (mode == .auto) ? .pro : .auto
+    userDefaults.set(mode.rawValue, forKey: lastShootingModeKey)
+
+    // Trigger Haptic Feedback
+    let generator = UIImpactFeedbackGenerator(style: .light)
+    generator.impactOccurred()
+
+    if mode == .auto {
+      cameraEngine.resetToAuto()  // This needs to be exposed async or wrapped
+    }
   }
 }
 
