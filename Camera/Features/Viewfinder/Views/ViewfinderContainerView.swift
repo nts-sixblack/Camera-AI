@@ -85,7 +85,9 @@ struct ViewfinderContainerView: View {
           Spacer()
 
           ModeToggleView(mode: viewModel.mode) {
-            viewModel.toggleMode()
+            withAnimation(.easeInOut(duration: 0.3)) {
+              viewModel.toggleMode()
+            }
           }
           .padding(.bottom, 20)
 
@@ -105,6 +107,7 @@ struct ViewfinderContainerView: View {
           }
           .padding(.bottom, 50)
         }
+        .zIndex(3)  // Ensure shutter button is always on top (Pro controls are zIndex 2)
       #endif
 
       // Flash Overlay
@@ -120,6 +123,31 @@ struct ViewfinderContainerView: View {
       if showFlash {
         Color.white.opacity(0.8).ignoresSafeArea()
       }
+
+      // Pro Mode Controls
+      if viewModel.mode == .pro {
+        VStack {
+          // Exposure HUD (Top)
+          ExposureHUDView()
+
+            .transition(.opacity)
+
+          Spacer()
+
+          // Pro Controls (Bottom)
+          ProControlView(cameraEngine: viewModel.cameraEngine)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
+        .zIndex(2)  // Ensure above shutter button and toggle
+      }
+
+      // Lens Switcher (Persistent HUD)
+      VStack {
+        Spacer()
+        LensSwitcherView(cameraEngine: viewModel.cameraEngine)
+          .padding(.bottom, 140)  // Position above shutter/mode area
+      }
+      .zIndex(1)
     }
     .sheet(isPresented: $viewModel.isPhotoLibraryAccessDenied) {
       PhotoLibraryPermissionDeniedView(isRestricted: false) {

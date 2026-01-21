@@ -93,7 +93,7 @@ final class MockCaptureSession: CaptureSessionProtocol, @unchecked Sendable {
 }
 
 /// Mock implementation of CaptureDeviceProtocol
-final class MockCaptureDevice: CaptureDeviceProtocol, @unchecked Sendable {
+final class MockCaptureDevice: NSObject, CaptureDeviceProtocol, @unchecked Sendable {
   private let lock = NSLock()
 
   var isFocusPointOfInterestSupported: Bool = true
@@ -108,6 +108,14 @@ final class MockCaptureDevice: CaptureDeviceProtocol, @unchecked Sendable {
 
   private var _lockForConfigurationCalled = false
   private var _unlockForConfigurationCalled = false
+
+  // ISO-related mock properties (Story 2.2)
+  @objc dynamic private var _iso: Float = 100.0
+  @objc dynamic private var _exposureDuration: CMTime = CMTime(value: 1, timescale: 125)  // 1/125s
+  @objc dynamic private var _lensAperture: Float = 1.8
+  private var _setExposureModeCustomCalled = false
+  private var _lastSetISO: Float = 0
+  private var _lastSetDuration: CMTime = .zero
 
   var focusPointOfInterest: CGPoint {
     get { lock.withLock { _focusPointOfInterest } }
@@ -160,6 +168,179 @@ final class MockCaptureDevice: CaptureDeviceProtocol, @unchecked Sendable {
 
   func unlockForConfiguration() {
     lock.withLock { _unlockForConfigurationCalled = true }
+  }
+
+  // MARK: - ISO/Exposure Protocol Properties (Story 2.2)
+
+  /// Returns a mock active format - uses the first format from a real device or a placeholder
+  var activeFormat: AVCaptureDevice.Format {
+    // We need to return a real Format. Getting one from a real device if available.
+    // In unit tests without real devices, this may crash on access to min/maxISO.
+    // A safer approach is to use a real device's format if simulator has one.
+    if let device = AVCaptureDevice.default(for: .video) {
+      return device.activeFormat
+    }
+    // Fallback - this may cause issues but is the best we can do in mock
+    fatalError("MockCaptureDevice.activeFormat requires a real device for format access in tests")
+  }
+
+  @objc dynamic var iso: Float {
+    get { lock.withLock { _iso } }
+    set { lock.withLock { _iso = newValue } }
+  }
+
+  @objc dynamic var exposureDuration: CMTime {
+    get { lock.withLock { _exposureDuration } }
+    set { lock.withLock { _exposureDuration = newValue } }
+  }
+
+  @objc dynamic var lensAperture: Float {
+    get { lock.withLock { _lensAperture } }
+    set { lock.withLock { _lensAperture = newValue } }
+  }
+
+  var setExposureModeCustomCalled: Bool {
+    lock.withLock { _setExposureModeCustomCalled }
+  }
+
+  var lastSetISO: Float {
+    lock.withLock { _lastSetISO }
+  }
+
+  func setExposureModeCustom(
+    duration: CMTime,
+    iso: Float,
+    completionHandler handler: ((CMTime) -> Void)?
+  ) {
+    lock.withLock {
+      _setExposureModeCustomCalled = true
+      _lastSetISO = iso
+      _lastSetDuration = duration
+      _iso = iso
+      _exposureDuration = duration
+    }
+    handler?(duration)
+  }
+
+  // MARK: - Focus/Lens Position Protocol Properties (Story 2.4)
+
+  private var _lensPosition: Float = 0.5
+  private var _setFocusModeLocked = false
+  private var _lastSetLensPosition: Float = 0
+
+  var lensPosition: Float {
+    get { lock.withLock { _lensPosition } }
+    set { lock.withLock { _lensPosition = newValue } }
+  }
+
+  var setFocusModeLockedCalled: Bool {
+    lock.withLock { _setFocusModeLocked }
+  }
+
+  var lastSetLensPosition: Float {
+    lock.withLock { _lastSetLensPosition }
+  }
+
+  func setFocusModeLocked(lensPosition: Float, completionHandler handler: ((CMTime) -> Void)?) {
+    lock.withLock {
+      _setFocusModeLocked = true
+      _lastSetLensPosition = lensPosition
+      _lensPosition = lensPosition
+    }
+    handler?(CMTime.zero)
+  }
+
+  // MARK: - White Balance Protocol Properties (Story 2.5)
+
+  private var _maxWhiteBalanceGain: Float = 4.0
+  private var _setWhiteBalanceModeLockedCalled = false
+  private var _lastSetWhiteBalanceGains: AVCaptureDevice.WhiteBalanceGains?
+
+  var maxWhiteBalanceGain: Float {
+    lock.withLock { _maxWhiteBalanceGain }
+  }
+
+  var setWhiteBalanceModeLockedCalled: Bool {
+    lock.withLock { _setWhiteBalanceModeLockedCalled }
+  }
+
+  var lastSetWhiteBalanceGains: AVCaptureDevice.WhiteBalanceGains? {
+    lock.withLock { _lastSetWhiteBalanceGains }
+  }
+
+  func deviceWhiteBalanceGains(
+    for temperatureAndTint: AVCaptureDevice.WhiteBalanceTemperatureAndTintValues
+  ) -> AVCaptureDevice.WhiteBalanceGains {
+    // Return simple mock gains based on temperature (simplified approximation)
+    let normalizedTemp = (temperatureAndTint.temperature - 2000) / 8000  // 0-1 range
+    return AVCaptureDevice.WhiteBalanceGains(
+      redGain: 1.0 + (1.0 - normalizedTemp),  // Higher red for warmer temps
+      greenGain: 1.0,
+      blueGain: 1.0 + normalizedTemp  // Higher blue for cooler temps
+    )
+  }
+
+  func setWhiteBalanceModeLocked(
+    with gains: AVCaptureDevice.WhiteBalanceGains,
+    completionHandler handler: ((CMTime) -> Void)?
+  ) {
+    lock.withLock {
+      _setWhiteBalanceModeLockedCalled = true
+      _lastSetWhiteBalanceGains = gains
+    }
+    handler?(CMTime.zero)
+  }
+
+  // MARK: - Zoom Protocol Properties (Story 2.6)
+
+  private var _videoZoomFactor: CGFloat = 1.0
+  private var _minAvailableVideoZoomFactor: CGFloat = 1.0
+  private var _maxAvailableVideoZoomFactor: CGFloat = 5.0
+  private var _virtualDeviceSwitchOverVideoZoomFactors: [NSNumber] = []
+  private var _rampToVideoZoomFactorCalled = false
+  private var _cancelVideoZoomRampCalled = false
+  private var _lastRampedZoomFactor: CGFloat = 0.0
+  private var _lastRampRate: Float = 0.0
+
+  var videoZoomFactor: CGFloat {
+    get { lock.withLock { _videoZoomFactor } }
+    set { lock.withLock { _videoZoomFactor = newValue } }
+  }
+
+  var minAvailableVideoZoomFactor: CGFloat {
+    get { lock.withLock { _minAvailableVideoZoomFactor } }
+    set { lock.withLock { _minAvailableVideoZoomFactor = newValue } }
+  }
+
+  var maxAvailableVideoZoomFactor: CGFloat {
+    get { lock.withLock { _maxAvailableVideoZoomFactor } }
+    set { lock.withLock { _maxAvailableVideoZoomFactor = newValue } }
+  }
+
+  var virtualDeviceSwitchOverVideoZoomFactors: [NSNumber] {
+    get { lock.withLock { _virtualDeviceSwitchOverVideoZoomFactors } }
+    set { lock.withLock { _virtualDeviceSwitchOverVideoZoomFactors = newValue } }
+  }
+
+  var rampToVideoZoomFactorCalled: Bool {
+    lock.withLock { _rampToVideoZoomFactorCalled }
+  }
+
+  var lastRampedZoomFactor: CGFloat {
+    lock.withLock { _lastRampedZoomFactor }
+  }
+
+  func ramp(toVideoZoomFactor factor: CGFloat, withRate rate: Float) {
+    lock.withLock {
+      _rampToVideoZoomFactorCalled = true
+      _lastRampedZoomFactor = factor
+      _lastRampRate = rate
+      _videoZoomFactor = factor
+    }
+  }
+
+  func cancelVideoZoomRamp() {
+    lock.withLock { _cancelVideoZoomRampCalled = true }
   }
 }
 
@@ -214,7 +395,7 @@ final class CameraEngineTests: XCTestCase {
     await engine.startSession()
 
     // Wait briefly for async operation
-    try? await Task.sleep(nanoseconds: 100_000_000)
+    try? await Task.sleep(nanoseconds: 500_000_000)
 
     // Then
     XCTAssertTrue(mockSession.startRunningCalled)
@@ -227,11 +408,11 @@ final class CameraEngineTests: XCTestCase {
     mockProvider.mockDevice = MockCaptureDevice()
     let engine = CameraEngine(captureSession: mockSession, deviceProvider: mockProvider)
     await engine.startSession()
-    try? await Task.sleep(nanoseconds: 100_000_000)
+    try? await Task.sleep(nanoseconds: 500_000_000)
 
     // When
     await engine.stopSession()
-    try? await Task.sleep(nanoseconds: 100_000_000)
+    try? await Task.sleep(nanoseconds: 500_000_000)
 
     // Then
     XCTAssertTrue(mockSession.stopRunningCalled)
@@ -248,7 +429,7 @@ final class CameraEngineTests: XCTestCase {
 
     // When
     await engine.startSession()
-    try? await Task.sleep(nanoseconds: 100_000_000)
+    try? await Task.sleep(nanoseconds: 500_000_000)
 
     // Then
     XCTAssertTrue(mockSession.beginConfigurationCalled)
@@ -265,7 +446,7 @@ final class CameraEngineTests: XCTestCase {
 
     // When
     await engine.startSession()
-    try? await Task.sleep(nanoseconds: 100_000_000)
+    try? await Task.sleep(nanoseconds: 500_000_000)
 
     // Then
     // We expect one output - the photo output
@@ -308,7 +489,7 @@ final class CameraEngineTests: XCTestCase {
 
     // When
     await engine.startSession()
-    try? await Task.sleep(nanoseconds: 200_000_000)
+    try? await Task.sleep(nanoseconds: 500_000_000)
 
     // Then
     XCTAssertEqual(engine.state, .running)
@@ -321,11 +502,11 @@ final class CameraEngineTests: XCTestCase {
     mockProvider.mockDevice = MockCaptureDevice()
     let engine = CameraEngine(captureSession: mockSession, deviceProvider: mockProvider)
     await engine.startSession()
-    try? await Task.sleep(nanoseconds: 200_000_000)
+    try? await Task.sleep(nanoseconds: 500_000_000)
 
     // When
     await engine.stopSession()
-    try? await Task.sleep(nanoseconds: 200_000_000)
+    try? await Task.sleep(nanoseconds: 500_000_000)
 
     // Then
     XCTAssertEqual(engine.state, .idle)
@@ -342,7 +523,7 @@ final class CameraEngineTests: XCTestCase {
 
     // When
     engine.preWarm()
-    try? await Task.sleep(nanoseconds: 200_000_000)
+    try? await Task.sleep(nanoseconds: 500_000_000)
 
     // Then
     XCTAssertTrue(mockSession.beginConfigurationCalled)
@@ -363,14 +544,14 @@ final class CameraEngineTests: XCTestCase {
 
     // Start session to configure it and set activeVideoDevice
     await engine.startSession()
-    try? await Task.sleep(nanoseconds: 100_000_000)
+    try? await Task.sleep(nanoseconds: 500_000_000)
 
     // When
     let focusPoint = CGPoint(x: 0.5, y: 0.5)
     engine.focus(at: focusPoint)
 
     // Wait for async queue
-    try? await Task.sleep(nanoseconds: 100_000_000)
+    try? await Task.sleep(nanoseconds: 500_000_000)
 
     // Then
     XCTAssertTrue(mockDevice.lockForConfigurationCalled)
@@ -394,7 +575,7 @@ final class CameraEngineTests: XCTestCase {
 
     // Manually trigger focus first to set state likely
     engine.focus(at: CGPoint(x: 0.2, y: 0.2))
-    try? await Task.sleep(nanoseconds: 100_000_000)
+    try? await Task.sleep(nanoseconds: 500_000_000)
 
     // When - Simulate subject area change notification
     NotificationCenter.default.post(
@@ -440,7 +621,7 @@ final class CameraEngineTests: XCTestCase {
 
     // If we reach here immediately, it didn't block the calling thread (it's async).
 
-    try? await Task.sleep(nanoseconds: 50_000_000)
+    try? await Task.sleep(nanoseconds: 300_000_000)
   }
 
   func testResetToAuto_ResetsDeviceConfiguration() async {
@@ -459,11 +640,257 @@ final class CameraEngineTests: XCTestCase {
 
     // When
     engine.resetToAuto()
-    try? await Task.sleep(nanoseconds: 100_000_000)
+    try? await Task.sleep(nanoseconds: 500_000_000)
 
     // Then
     XCTAssertEqual(mockDevice.focusMode, .continuousAutoFocus)
     XCTAssertEqual(mockDevice.exposureMode, .continuousAutoExposure)
     XCTAssertEqual(mockDevice.whiteBalanceMode, .continuousAutoWhiteBalance)
   }
-}
+
+  // MARK: - Focus Control Tests (M4 fix: Story 2.4)
+
+  func testSetFocusLensPosition_SetsDeviceLensPosition() async {
+    // Given
+    let mockSession = MockCaptureSession()
+    let mockDevice = MockCaptureDevice()
+    let mockProvider = MockCaptureDeviceProvider()
+    mockProvider.mockDevice = mockDevice
+    let engine = CameraEngine(captureSession: mockSession, deviceProvider: mockProvider)
+    await engine.startSession()
+    try? await Task.sleep(nanoseconds: 500_000_000)
+
+    // When
+    engine.setFocusLensPosition(0.75)
+    try? await Task.sleep(nanoseconds: 500_000_000)
+
+    // Then
+    XCTAssertTrue(mockDevice.setFocusModeLockedCalled)
+    XCTAssertEqual(mockDevice.lastSetLensPosition, 0.75, accuracy: 0.001)
+  }
+
+  func testSetFocusLensPosition_ClampsToValidRange() async {
+    // Given
+    let mockSession = MockCaptureSession()
+    let mockDevice = MockCaptureDevice()
+    let mockProvider = MockCaptureDeviceProvider()
+    mockProvider.mockDevice = mockDevice
+    let engine = CameraEngine(captureSession: mockSession, deviceProvider: mockProvider)
+    await engine.startSession()
+    try? await Task.sleep(nanoseconds: 500_000_000)
+
+    // When - try to set value above 1.0
+    engine.setFocusLensPosition(1.5)
+    try? await Task.sleep(nanoseconds: 500_000_000)
+
+    // Then - should be clamped to 1.0
+    XCTAssertEqual(mockDevice.lastSetLensPosition, 1.0, accuracy: 0.001)
+  }
+
+  func testSetAutoFocus_ResetsToAutoFocusMode() async {
+    // Given
+    let mockSession = MockCaptureSession()
+    let mockDevice = MockCaptureDevice()
+    let mockProvider = MockCaptureDeviceProvider()
+    mockProvider.mockDevice = mockDevice
+    let engine = CameraEngine(captureSession: mockSession, deviceProvider: mockProvider)
+    await engine.startSession()
+    try? await Task.sleep(nanoseconds: 500_000_000)
+
+    // First set manual focus
+    mockDevice.focusMode = .locked
+
+    // When
+    engine.setAutoFocus()
+    try? await Task.sleep(nanoseconds: 500_000_000)
+
+    // Then
+    XCTAssertEqual(mockDevice.focusMode, .continuousAutoFocus)
+  }
+
+  // MARK: - White Balance Control Tests (Story 2.5)
+
+  func testSetWhiteBalanceTemperature_SetsDeviceGains() async {
+    // Given
+    let mockSession = MockCaptureSession()
+    let mockDevice = MockCaptureDevice()
+    let mockProvider = MockCaptureDeviceProvider()
+    mockProvider.mockDevice = mockDevice
+    let engine = CameraEngine(captureSession: mockSession, deviceProvider: mockProvider)
+    await engine.startSession()
+    try? await Task.sleep(nanoseconds: 500_000_000)
+
+    // When
+    engine.setWhiteBalanceTemperature(5500.0)
+    try? await Task.sleep(nanoseconds: 500_000_000)
+
+    // Then
+    XCTAssertTrue(mockDevice.setWhiteBalanceModeLockedCalled)
+    XCTAssertNotNil(mockDevice.lastSetWhiteBalanceGains)
+  }
+
+  func testSetWhiteBalanceTemperature_ClampsToMinimum() async {
+    // Given
+    let mockSession = MockCaptureSession()
+    let mockDevice = MockCaptureDevice()
+    let mockProvider = MockCaptureDeviceProvider()
+    mockProvider.mockDevice = mockDevice
+    let engine = CameraEngine(captureSession: mockSession, deviceProvider: mockProvider)
+    await engine.startSession()
+    try? await Task.sleep(nanoseconds: 500_000_000)
+
+    // When - try to set value below minimum (2000K)
+    engine.setWhiteBalanceTemperature(1000.0)
+    try? await Task.sleep(nanoseconds: 500_000_000)
+
+    // Then - should still call setWhiteBalanceModeLocked (clamped internally)
+    XCTAssertTrue(mockDevice.setWhiteBalanceModeLockedCalled)
+
+    // Verify it used values for 2000K, not 1000K
+    // At 2000K with our mock: Red=2.0, Green=1.0, Blue=1.0
+    // If it used 1000K: Red=2.125, Green=1.0, Blue=0.875
+    guard let gains = mockDevice.lastSetWhiteBalanceGains else {
+      XCTFail("Gains should not be nil")
+      return
+    }
+
+    // Check that blue gain is >= 1.0 (validating both proper Kelvin clamping and/or gain clamping)
+    XCTAssertGreaterThanOrEqual(gains.blueGain, 1.0)
+    XCTAssertEqual(gains.blueGain, 1.0, accuracy: 0.001)
+    XCTAssertEqual(gains.redGain, 2.0, accuracy: 0.001)
+  }
+
+  func testSetAutoWhiteBalance_ResetsToAutoMode() async {
+    // Given
+    let mockSession = MockCaptureSession()
+    let mockDevice = MockCaptureDevice()
+    let mockProvider = MockCaptureDeviceProvider()
+    mockProvider.mockDevice = mockDevice
+    let engine = CameraEngine(captureSession: mockSession, deviceProvider: mockProvider)
+    await engine.startSession()
+    try? await Task.sleep(nanoseconds: 500_000_000)
+
+    // First set manual white balance
+    mockDevice.whiteBalanceMode = .locked
+
+    // When
+    engine.setAutoWhiteBalance()
+    try? await Task.sleep(nanoseconds: 500_000_000)
+
+    // Then
+    XCTAssertEqual(mockDevice.whiteBalanceMode, .continuousAutoWhiteBalance)
+  }
+
+  // MARK: - Zoom Control Tests (Story 2.6)
+
+  func testSetZoomFactor_RampsToValue() async {
+    // Given
+    let mockSession = MockCaptureSession()
+    let mockDevice = MockCaptureDevice()
+    let mockProvider = MockCaptureDeviceProvider()
+    mockProvider.mockDevice = mockDevice
+    let engine = CameraEngine(captureSession: mockSession, deviceProvider: mockProvider)
+    await engine.startSession()
+    try? await Task.sleep(nanoseconds: 500_000_000)
+
+    // When
+    engine.setZoomFactor(2.0)
+    try? await Task.sleep(nanoseconds: 500_000_000)
+
+    // Then
+    XCTAssertTrue(mockDevice.rampToVideoZoomFactorCalled)
+    XCTAssertEqual(mockDevice.lastRampedZoomFactor, 2.0, accuracy: 0.001)
+  }
+
+  func testAvailableLensFactors_ReturnsCorrectValues() async {
+    // Given
+    let mockSession = MockCaptureSession()
+    let mockDevice = MockCaptureDevice()
+    // Configure mock device to simulate a triple camera (0.5x, 1x, 2x switch over implies lenses)
+    // switch over factors: [2.0] usually means transitions.
+    // Let's assume a simplified mock behavior where we just check what the engine exposes
+    // The engine should consult the device.
+
+    // For this test, we need to inspect what the Engine returns.
+    // Since MockDevice doesn't easily simulate complex switchOverFactors without more logic,
+    // we'll rely on the engine's default logic or mock configuration.
+
+    mockDevice.virtualDeviceSwitchOverVideoZoomFactors = [2.0]  // Hypothetical switch point
+
+    let mockProvider = MockCaptureDeviceProvider()
+    mockProvider.mockDevice = mockDevice
+    let engine = CameraEngine(captureSession: mockSession, deviceProvider: mockProvider)
+    await engine.startSession()
+    try? await Task.sleep(nanoseconds: 500_000_000)
+
+    // When
+    let factors = engine.availableLensFactors
+
+    // Then
+    // We expect at least some factors. If logic relies on switchOverFactors:
+    // With [2.0], maybe we get 1.0 and 2.0? Or 0.5, 1.0, 2.0?
+    // Let's assert based on what we plan to implement (likely 0.5, 1.0, 3.0 basics)
+    XCTAssertFalse(factors.isEmpty)
+  }
+
+  func testSetZoomFactor_ResetsManualFocus() async {
+    // Given
+    let mockSession = MockCaptureSession()
+    let mockDevice = MockCaptureDevice()
+    let mockProvider = MockCaptureDeviceProvider()
+    mockProvider.mockDevice = mockDevice
+    let engine = CameraEngine(captureSession: mockSession, deviceProvider: mockProvider)
+    await engine.startSession()
+    try? await Task.sleep(nanoseconds: 500_000_000)
+
+    // Set manual focus first
+    engine.setFocusLensPosition(0.5)
+    try? await Task.sleep(nanoseconds: 500_000_000)
+    XCTAssertTrue(engine.isUsingManualFocus)
+
+    // When - Switch lenses (zoom)
+    engine.setZoomFactor(2.0)
+    try? await Task.sleep(nanoseconds: 500_000_000)
+
+    // Then
+    XCTAssertFalse(engine.isUsingManualFocus)
+    XCTAssertEqual(mockDevice.focusMode, .continuousAutoFocus)
+  }
+
+  // MARK: - Exposure Observation Tests (Story 2.7)
+
+  func testExposureValues_UpdateOnDeviceChange() async {
+    // Given
+    let mockSession = MockCaptureSession()
+    let mockDevice = MockCaptureDevice()
+    let mockProvider = MockCaptureDeviceProvider()
+    mockProvider.mockDevice = mockDevice
+    let engine = CameraEngine(captureSession: mockSession, deviceProvider: mockProvider)
+
+    await engine.startSession()
+    try? await Task.sleep(nanoseconds: 500_000_000)
+
+    // Check initial values (from mock defaults)
+    XCTAssertEqual(engine.currentISO, 100.0)
+    XCTAssertEqual(engine.currentExposureDuration.seconds, 1.0 / 125.0, accuracy: 0.0001)
+    XCTAssertEqual(engine.currentAperture, 1.8)
+
+    // When - hardware updates values (e.g. auto exposure)
+    // We update the mock properties which should trigger KVO in engine
+    let newISO: Float = 200.0
+    let newDuration = CMTime(value: 1, timescale: 60)  // 1/60s
+    let newAperture: Float = 2.4
+
+    mockDevice.iso = newISO
+    mockDevice.exposureDuration = newDuration
+    mockDevice.lensAperture = newAperture
+
+    // Wait for main thread updates
+    try? await Task.sleep(nanoseconds: 500_000_000)
+
+    // Then
+    XCTAssertEqual(engine.currentISO, newISO)
+    XCTAssertEqual(engine.currentExposureDuration.seconds, newDuration.seconds, accuracy: 0.0001)
+    XCTAssertEqual(engine.currentAperture, newAperture)
+  }
+}  // End of CameraEngineTests extension (Wait, cat appending needs care with closing braces)

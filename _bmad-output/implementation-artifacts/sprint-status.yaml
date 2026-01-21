@@ -52,14 +52,16 @@ development_status:
   epic-1-retrospective: optional
 
   # Epic 2: Manual Controls & Pro Mode
-  epic-2: backlog
-  2-1-pro-mode-activation-ui-transition: backlog
-  2-2-iso-dial-control-with-real-time-preview: backlog
-  2-3-shutter-speed-dial-control-with-real-time-preview: backlog
-  2-4-manual-focus-dial-control-with-visual-confirmation: backlog
-  2-5-white-balance-control-with-presets-and-kelvin: backlog
-  2-6-hardware-lens-switching-virtual-device: backlog
-  2-7-exposure-values-display-hud: backlog
+  epic-2: in-progress
+  2-1-pro-mode-activation-ui-transition: done
+  2-2-iso-dial-control-with-real-time-preview: done
+  2-3-shutter-speed-dial-control-with-real-time-preview: done
+  2-4-manual-focus-dial-control-with-visual-confirmation: done
+  2-5-white-balance-control-with-presets-and-kelvin: done
+  2-6-hardware-lens-switching-virtual-device: done
+  2-7-exposure-values-display-hud: review
+
+
   epic-2-retrospective: optional
 
   # Epic 3: Visual Aids & Capture Confidence
